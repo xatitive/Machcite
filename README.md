@@ -1,6 +1,7 @@
 # Variscite
-Variscite is a tool that lets you easily inject a dylib into an IPA file.
+Variscite is a tool that lets you easily inject a dylib into an IPA or MacOS Mach-O file.
 This is usually used to modify apps for enhanced functionality or changing features.
+
 
 ## Installation
 Head to the [Releases page](https://github.com/ThatStella7922/Variscite/releases) for a download and instructions for how to use it.

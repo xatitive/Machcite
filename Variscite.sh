@@ -2,7 +2,7 @@
 
 # Variscite - by ThatStella7922 - https://thatstel.la
 # Shoutout to crystall1nedev my beloved (find her site at https://crystall1ne.dev!)
-ver="2023.0701.0"
+ver="2023.0816.0"
 
 # colors
 usecolors="true"
@@ -37,6 +37,21 @@ nonInteractiveAzuleCheck () {
             echo -e "$error Cannot continue without Azule."
             echo -e "$info Variscite can install Azule for you - Run Variscite with -h to learn more."
             echo -e "$info Alternatively, you can manually install it at https://github.com/Al4ise/Azule/wiki."
+            return 1
+        else
+            return 1
+        fi
+    else
+        return 0
+    fi
+}
+
+nonInteractiveDillyCheck () {
+    if [[ ! -f "$(which insert_dylib)" ]]; then
+        if [[ $1 == "true" ]]; then
+            echo -e "$error Variscite couldn't locate the dylib inserter. If it's already installed, make sure that it's in the PATH."
+            echo -e "$error Cannot continue without inserter."
+            echo -e "$info Alternatively, you can manually install it at https://github.com/tyilo/insert_dylib."
             return 1
         else
             return 1
@@ -249,6 +264,94 @@ uninstallAzule () {
     fi
 }
 
+downloadDilly () {
+    nonInteractiveCurlCheck
+    if [[ $? == "0" ]]; then
+
+        # curl is available
+        git clone https://github.com/tyilo/insert_dylib.git DylibTemp
+        res=$?
+        if test "$res" != "0"; then
+            echo -e "$error git failed with: $res"
+            echo -e "$info Retrying download again using curl!"
+            curl -LJ#o Dylib.zip https://github.com/tyilo/insert_dylib/archive/refs/heads/master.zip
+            res=$?
+            if test "$res" != "0"; then
+                echo -e "$error curl failed with: $res"
+                exit $res
+            else
+                # curl works, unzip so installer can install
+                unzip -q Dylib.zip
+                mv insert_dylib-master DylibTemp
+                return 0
+            fi
+        fi
+    else
+        # curl is not available
+        git clone https://github.com/tyilo/insert_dylib.git DylibTemp
+        res=$?
+        if test "$res" != "0"; then
+            echo -e "$error git failed with: $res"
+            echo -e "$info Cannot retry with curl as it's not installed or in the PATH."
+            exit $res
+        fi
+        return 0
+    fi
+}
+
+installDilly () {
+    echo -e "$info Downloading dylib inserter..."
+    rm -rf temp 2> /dev/null;mkdir temp;cd temp
+    downloadDilly
+    echo -e "$info Installing dylib inserter (this may require your password)..."
+    if [[ ! -d ~/Applications ]]; then
+        mkdir ~/Applications
+    fi #check if applications folder exists at ~ so we can put Azule there
+    if [[ -d ~/Applications/nsert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there with the old path and if so delete it
+    if [[ -d ~/Applications/insert_dylib ]]; then
+        rm -rf ~/Applications/insert_dylib
+    fi #check if azule is there and if so delete it
+    mv DylibTemp/ ~/Applications/insert_dylib-master
+    cd ..
+    rm -rf temp
+    xcodebuild -workspace ~/Applications/insert_dylib-master/insert_dylib.xcodeproj/project.xcworkspace -scheme insert_dylib build
+    if [[ ! -d /usr/local/bin ]]; then
+        sudo mkdir /usr/local/bin
+    fi #check if /usr/local/bin exists and if not, make the folder
+    sudo ln -sf ~/Applications/insert_dylib-master/insert_dylib /usr/local/bin/insert_dylib
+    if [[ $? == "0" ]]; then
+        echo -e "$info Dylib inserter installed succesfully. (symlinked to /usr/local/bin/insert_dylib)"
+    else
+        echo -e "$error Installation failed with code $?"
+        exit $?
+    fi
+}
+
+uninstallDilly () {
+    echo -e "$info Uninstalling the dylib inserter (this may require your password)..."
+    if [[ -d ~/Applications/insert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there with the old path and if so delete it
+    if [[ -d ~/Applications/insert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there and if so delete it
+    if [[ $? == "0" ]]; then
+        echo -e "$info Deleted the Azule folder, will now remove symlink..."
+    else
+        echo -e "$error Failed to remove the Azule folder with error code $?, see ~/Applications/ to remove it yourself then attempt uninstallation again."
+        exit $?
+    fi
+    sudo rm -rf /usr/local/bin/insert_dylib
+    if [[ $? == "0" ]]; then
+        echo -e "$info Dylib inserter uninstalled succesfully."
+    else
+        echo -e "$error Uninstallation failed with code $?"
+        exit $?
+    fi
+}
+
 # Checks that the IPA is valid, returns 0 if OK and 1 if invalid.
 # Call: validateIpa PathToIpa DoIPromptForNewIpa[true/false]
 validateIpa () {
@@ -289,6 +392,26 @@ validateDylib () {
     fi
 }
 
+# Checks that the Mach-O file is valid, returns 0 if OK and 1 if invalid.
+# Call: validateMachO PathToMachO DoIPromptForNewMachO[true/false]
+validateMachO () {
+    if ! file "$1" | grep -q "Mach-O"; then
+        if [[ $2 == "true" ]]; then
+            echo -e "$error The specified file doesn't appear to be a valid Mach-O file"
+            read -p "$(echo -e "$question Specify the path of a valid Mach-O file: ")" mach
+            validateMachO $mach true
+            if [[ $? == "0" ]]; then
+                return 0
+            else
+                return 1
+            fi
+        fi
+        return 1
+    else
+        return 0
+    fi
+}
+
 # Checks that the folder exists, returns 0 if OK and 1 if it doesn't exist.
 # Call: validatePath PathToCheck MakeFolderIfNotExist[true/false]
 validatePath () {
@@ -311,8 +434,133 @@ validatePath () {
 
 # Specify arguments when calling. patchIpa PathToIpa PathToDylib OutputPath
 patchIpa () {
+    echo -e "Patching!"
     azule -U -i $1 -o $3 -f $2 -r -v | sed -u -r "s/(\[\*\])/$(echo -e $azule)/g"
 }
+
+# Specify arguments when calling. patchMach PathToDylib PathToBinary OutputPath
+patchMach () {
+    echo -e "$info Patching!"
+    insert_dylib --inplace $1 $2 $3
+    echo -e "$success Patching complete!"
+}
+
+# Prompt user and get input
+prompt_and_validate() {
+    while true; do
+        read -p "$(echo -e "$question What are you patching? Enter 'ios' for an IPA file or 'mach' for a Mach-O file: ")" filetype
+
+        if [[ $filetype == "ios" ]]; then
+            ipaFilePickerInteractive
+            break
+        elif [[ $filetype == "mach" ]]; then
+            dylibFilePickerInteractive
+            machFilePickerInteractive
+            break
+        else
+            echo -e "$error Invalid file type entered. Please enter 'ios' for IPA file or 'mach' for Mach-O file."
+        fi
+    done
+}
+
+# ipa file picker
+ipaFilePickerInteractive() {
+    if [[ -z $ipafile ]]; then
+        read -p "$(echo -e "$question Please specify the path of the IPA file you want to patch: ")" ipafile
+    fi
+    validateIpa "$ipafile" true
+    iparesult=$?
+    if [[ $iparesult == "1" ]]; then
+        exit 1
+    else
+        echo -e "$success Found an IPA file at $ipafile, will patch this one!"
+        echo
+    fi
+}
+
+# mach file picker
+machFilePickerInteractive() {
+    if [[ -z $macho_file ]]; then
+        read -p "$(echo -e "$question Please specify the path of the Mach-O file you want to patch: ")" mach
+    fi
+    validateMachO "$mach" true
+    machresult=$?
+    if [[ $machresult == "1" ]]; then
+        exit 1
+    else
+        echo -e "$success Found a Mach-O file at $mach, will patch this one!"
+        echo
+    fi
+}
+
+# dylib file picker
+dylibFilePickerInteractive() {
+    if [[ -z $dylib ]]; then
+        read -p "$(echo -e "$question Please specify the path of the dylib file you want to patch with: ")" dylib
+        echo -e "validating dylib"
+    fi
+    validateDylib "$dylib" true
+    dylibresult=$?
+    if [[ $dylibresult == "1" ]]; then
+        exit 1
+    else
+        echo -e "$success Found a dylib file at $dylib, will patch with this one!"
+        echo
+    fi
+}
+
+nonInteractiveDillyCheck() {
+    nonInteractiveDillyCheck true
+    if [[ $? == "0" ]]; then
+        validateMachO "$mach"; machresult=$?
+        validateDylib "$dylib"; dylibresult=$?
+        validatePath "$outpath"; pathresult=$?
+
+        # check if all passed files and paths are valid
+        if [[ $machresult == "1" ]] || [[ $dylibresult == "1" ]] || [[ $pathresult == "1" ]]; then
+            echo -e "$error One of the selected input files or output path is bad."
+            echo -e "$info Specified Mach-O: $mach - Bad: $machresult"
+            echo -e "$info Specified dylib: $dylib - Bad: $dylibresult"
+            echo -e "$info Specified output path: $outpath - Bad: $pathresult"
+            exit 1
+        else
+            echo -e "$info Running the inserter now..."
+            patchMach "$dylib" "$mach" "$outpath"
+            if [[ $? == "0" ]]; then
+                echo -e "$success The dylib inserter finished patching the Mach-O file."
+                exit 0
+            else
+                echo -e "$error There was a problem while patching the Mach-O file. Please see above."
+                exit 1
+            fi
+        fi
+    else
+        # Error message from no inserter was triggered in the above call to nonInteractiveDillycheck
+        exit 1
+    fi
+}
+
+outpathInteractions() {
+    if [[ -z $outpath ]]; then
+        # If not then prompt for one and validate
+        echo 
+        echo -e "$init Please specify the folder for saving the patched file (do not specify a filename like ~/Desktop/patched.ipa)"
+        read -p "$(echo -e "$question Path: ")" outpath
+        validatePath "$outpath"; pathresult=$?
+        if [[ $pathresult == "1" ]]; then
+            exit 1
+        fi
+    else
+        # If found in variable then validate
+        validatePath "$outpath"; pathresult=$?
+        if [[ $pathresult == "1" ]]; then
+            exit 1
+        else
+            echo -e "$success Found an output path at $outpath, will output here!"
+        fi
+    fi
+}
+
 
 showHelp () {
     echo -e "$help Variscite is a tool that lets you easily inject a library (dylib) into an iOS app archive (IPA file)."
@@ -327,6 +575,7 @@ showHelp () {
     echo -e "$help -i[path]    Specify an IPA file. Example: -i/Users/Stella/Downloads/SomeApp.ipa"
     echo -e "$help -d[path]    Specify a dylib. Example: -d/Users/Stella/Downloads/SomeLibrary.dylib"
     echo -e "$help -o[path]    Specify an output path. Example: -o/Users/Stella/Downloads/"
+    echo -e "$help -m[path]    Specify a Mach-O application Example: -m/Users/Stella/Downloads/Gauss/Contents/MacOS/Gauss"
     echo -e "$help"
     echo -e "$help Variscite Behavior"
     echo -e "$help If -s1 isn't passed, Variscite will run in interactive mode using options in -i, -d and -o."
@@ -382,12 +631,85 @@ if [[ $1 == "-uA"* ]] || [[ $1 == "--uA"* ]]; then
     fi
 fi
 
+# Check for install Dilly argument.
+if [[ $1 == "-iD"* ]] || [[ $1 == "--iD"* ]]; then
+    nonInteractiveDillyCheck
+    if [[ ! $? == "0" ]]; then
+        installAzule
+        exit $?
+    else
+        echo -e "$info The dylib inserter is already installed!"
+        echo -e "$info You can find the files at ~/Applications/insert_dylib-master"
+        echo -e "$info You can also find the executable symlink at /usr/local/bin/insert_dylib"
+    exit $?
+    fi
+fi
+
+# Check for uninstall Dilly argument.
+if [[ $1 == "-uD"* ]] || [[ $1 == "--uD"* ]]; then
+    nonInteractiveDillyCheck
+    if [[ $? == "0" ]]; then
+        uninstallDilly
+        exit $?
+    else
+        echo -e "$error Couldn't find the dylib inserter, it has likely already been uninstalled!"
+        exit $?
+    fi
+fi
+
+# Check for install Dilly argument.
+if [[ $1 == "-iA"* ]] || [[ $1 == "--iA"* ]]; then
+    nonInteractiveDillyCheck
+    if [[ ! $? == "0" ]]; then
+        installDilly
+        exit $?
+    else
+        echo -e "$info The dylib inserter is already installed!"
+        echo -e "$info You can find the files at ~/Applications/insert_dylib-master."
+        echo -e "$info You can also find the executable symlink at /usr/local/bin/insert_dylib"
+    exit $?
+    fi
+fi
+
+nonInteractiveAzuleCheck() {
+    nonInteractiveAzuleCheck true
+    if [[ $? == "0" ]]; then
+        validateIpa "$ipafile"; iparesult=$?
+        validateDylib "$dylib"; dylibresult=$?
+        validatePath "$outpath"; pathresult=$?
+
+        # check if all passed files and paths are valid
+        if [[ $iparesult == "1" ]] || [[ $dylibresult == "1" ]] || [[ $pathresult == "1" ]]; then
+            echo -e "$error One of the selected input files or output path is bad."
+            echo -e "$info Specified IPA: $ipafile - Bad: $iparesult"
+            echo -e "$info Specified dylib: $dylib - Bad: $dylibresult"
+            echo -e "$info Specified output path: $outpath - Bad: $pathresult"
+            exit 1
+        else
+            echo -e "$info Running Azule now..."
+            patchIpa "$ipafile" "$dylib" "$outpath"
+            if [[ $? == "0" ]]; then
+                echo -e "$success Azule finished patching the IPA file."
+                exit 0
+            else
+                echo -e "$error There was a problem while patching the IPA file. Please see above."
+                exit 1
+            fi
+        fi
+    else
+        # Error message from no Azule was triggered in the above call to nonInteractiveAzuleCheck
+        exit 1
+    fi
+}
+
+
 # Check for non-interactive arguments
-while getopts ':s:i:d:o:' OPTION
+while getopts ':s:i:m:d:o:' OPTION
 do
   case "${OPTION}" in
     s) silent=${OPTARG};;
     i) ipafile=${OPTARG};;
+    m) mach-o=${OPTARG};;
     d) dylib=${OPTARG};;
     o) outpath=${OPTARG};;
    \?) echo -e "$error Invalid option: -${OPTARG}" >&2; exit 1;;
@@ -438,6 +760,11 @@ fi
 
 ### Interactive mode execution
 # Check what we are running on
+
+if [[ $1 == "ListAllVariables" ]]; then
+    listAllVariables
+fi
+
 checkAreWeOnMac;macoscheck=$?
 checkAreWeOnJbIos;ioscheck=$?
 checkAreWeOnLinux;linuxcheck=$?
@@ -534,59 +861,31 @@ if [ ! -f "$(which azule)" ]; then
     fi
 fi
 
+reset
 echo -e "$init Welcome to Variscite's interactive mode!"
 echo -e "$init We will need to collect some info about the files you want to work with."
 
-# Check if an IPA file was already passed
-if [[ -z $ipafile ]]; then
-    # If not then prompt for one and validate
-    read -p "$(echo -e "$question Please specify the path of the IPA file you want to patch: ")" ipafile
-    validateIpa $ipafile true;iparesult=$?
-    if [[ $iparesult == "1" ]]; then
-        exit 1
-    fi
-else
-    # If found in variable then validate
-    validateIpa $ipafile true;iparesult=$?
-    if [[ $iparesult == "1" ]]; then
-        exit 1
-    else
-        echo -e "$success Found an IPA file at $ipafile, will patch this one!"
-        echo
-    fi
-fi
-
-# Check if a dylib file was already passed
-if [[ -z $dylib ]]; then
-    # If not then prompt for one and validate
-    read -p "$(echo -e "$question Please specify the path of the dylib file you want to patch with: ")" dylib
-    validateDylib $dylib;dylibresult=$?
-    if [[ $dylibresult == "1" ]]; then
-        exit 1
-    fi
-else
-    # If found in variable then validate
-    validateDylib $dylib;dylibresult=$?
-    if [[ $dylibresult == "1" ]]; then
-        exit 1
-    else
-        echo -e "$success Found a dylib file at $dylib, will patch this one!"
-    fi
-fi
+# Main loop function
+prompt_and_validate
 
 # Check if an output path was already passed
 if [[ -z $outpath ]]; then
     # If not then prompt for one and validate
-    echo 
-    echo -e "$init Please specify the folder for saving the patched IPA (do not specify a filename like ~/Desktop/patched.ipa)"
-    read -p "$(echo -e "$question Path: ")" outpath
-    validatePath $outpath;pathresult=$?
-    if [[ $pathresult == "1" ]]; then
-        exit 1
-    fi
+    while true; do
+        echo 
+        read -p "$(echo -e "$init Please specify the folder for saving the patched file (do not specify a filename like ~/Desktop/patched.ipa)\n$question Path: ")" outpath
+        validatePath "$outpath" true
+        pathresult=$?
+        if [[ $pathresult == "0" ]]; then
+            break  # Break out of the loop since a valid path was provided
+        else
+            echo -e "$error The specified output path is invalid. Please provide a valid folder path."
+        fi
+    done
 else
     # If found in variable then validate
-    validatePath $outpath;pathresult=$?
+    validatePath "$outpath" true
+    pathresult=$?
     if [[ $pathresult == "1" ]]; then
         exit 1
     else
@@ -594,33 +893,26 @@ else
     fi
 fi
 
-# done collecting info, check everything *again* just to make sure, then patch same as noninteractive mode
-nonInteractiveAzuleCheck true
-if [[ $? == "0" ]]; then
-    validateIpa $ipafile;iparesult=$?
-    validateDylib $dylib;dylibresult=$?
-    validatePath $outpath;pathresult=$?
-    # check if all passed files and paths are valid
-    if [[ $iparesult == "1" ]] || [[ $dylibresult == "1" ]] || [[ $pathresult == "1" ]]; then
-        echo -e "$error One of the selected input files or output path is bad."
-        echo -e "$info Specified IPA: $ipafile - Bad: $iparesult"
-        echo -e "$info Specified dylib: $dylib - Bad: $dylibresult"
-        echo -e "$info Specified output path: $outpath - Bad: $pathresult"
-        exit 1
+if [[ $filetype == "ios" ]]; then
+    # Specify arguments when calling. patchIpa PathToIpa PathToDylib OutputPath
+    patchIpa "$ipafile" "$dylib" "$outpath"
+    if [[ $? == "0" ]]; then
+        echo -e "$success Azule finished patching the IPA file."
+        exit 0
     else
-        echo -e "$info Running Azule now..."
-        patchIpa $ipafile $dylib $outpath
-        if [[ $? == "0" ]]; then
-            echo -e "$success Azule finished patching the IPA file."
-            exit 0
-        else
-            echo -e "$error There was a problem while patching the IPA file. Please see above."
-            exit 1
-        fi
+        echo -e "$error There was a problem while patching the IPA file. Please see above."
+        exit 1
     fi
-else
-    # Error message from no Azule was triggered in the above call to nonInteractiveAzuleCheck
-    exit 1
+elif [[ $filetype == "mach" ]]; then
+    # Specify arguments when calling. patchMach PathToDylib PathToBinary OutputPath
+    patchMach "$dylib" "$mach" "$outpath"
+    if [[ $? == "0" ]]; then
+        echo -e "$success The dylib inserter finished patching the Mach-O file."
+        exit 0
+    else
+        echo -e "$error There was a problem while patching the Mach-O file. Please see above."
+        exit 1
+    fi
 fi
 
 echo "If you are seeing this then I left some codepath open. Please create an issue or yell at me (you can find contact info on https://thatstel.la)"

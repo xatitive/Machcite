@@ -54,6 +54,21 @@ nonInteractiveAzuleCheck () {
     fi
 }
 
+nonInteractiveDillyCheck () {
+    if [[ ! -f "$(which insert_dylib)" ]]; then
+        if [[ $1 == "true" ]]; then
+            echo -e "$error Variscite couldn't locate the dylib inserter. If it's already installed, make sure that it's in the PATH."
+            echo -e "$error Cannot continue without inserter."
+            echo -e "$info Alternatively, you can manually install it at https://github.com/tyilo/insert_dylib."
+            return 1
+        else
+            return 1
+        fi
+    else
+        return 0
+    fi
+}
+
 ## Checks for the Xcode command line tools and doesn't prompt for installation. Returns 1 if Xcode not found, else returns 0.
 # Call with true to make it print an error.
 nonInteractiveXcodeCltCheck () {
@@ -99,7 +114,7 @@ checkAreWeOnJbIos () {
             return 0
         else
             # we are not on ios so stop here
-            return 1
+            return 0
         fi
     else
         # we are not even on darwin so stop here
@@ -163,6 +178,94 @@ uninstallAzule () {
     sudo rm -rf /usr/local/bin/azule
     if [[ $? == "0" ]]; then
         echo -e "$info Azule uninstalled succesfully."
+    else
+        echo -e "$error Uninstallation failed with code $?"
+        exit $?
+    fi
+}
+
+downloadDilly () {
+    nonInteractiveCurlCheck
+    if [[ $? == "0" ]]; then
+
+        # curl is available
+        git clone https://github.com/tyilo/insert_dylib.git DylibTemp
+        res=$?
+        if test "$res" != "0"; then
+            echo -e "$error git failed with: $res"
+            echo -e "$info Retrying download again using curl!"
+            curl -LJ#o Dylib.zip https://github.com/tyilo/insert_dylib/archive/refs/heads/master.zip
+            res=$?
+            if test "$res" != "0"; then
+                echo -e "$error curl failed with: $res"
+                exit $res
+            else
+                # curl works, unzip so installer can install
+                unzip -q Dylib.zip
+                mv insert_dylib-master DylibTemp
+                return 0
+            fi
+        fi
+    else
+        # curl is not available
+        git clone https://github.com/tyilo/insert_dylib.git DylibTemp
+        res=$?
+        if test "$res" != "0"; then
+            echo -e "$error git failed with: $res"
+            echo -e "$info Cannot retry with curl as it's not installed or in the PATH."
+            exit $res
+        fi
+        return 0
+    fi
+}
+
+installDilly () {
+    echo -e "$info Downloading dylib inserter..."
+    rm -rf temp 2> /dev/null;mkdir temp;cd temp
+    downloadDilly
+    echo -e "$info Installing dylib inserter (this may require your password)..."
+    if [[ ! -d ~/Applications ]]; then
+        mkdir ~/Applications
+    fi #check if applications folder exists at ~ so we can put Azule there
+    if [[ -d ~/Applications/nsert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there with the old path and if so delete it
+    if [[ -d ~/Applications/insert_dylib ]]; then
+        rm -rf ~/Applications/insert_dylib
+    fi #check if azule is there and if so delete it
+    mv DylibTemp/ ~/Applications/insert_dylib-master
+    cd ..
+    rm -rf temp
+    xcodebuild -workspace ~/Applications/insert_dylib-master/insert_dylib.xcodeproj/project.xcworkspace -scheme insert_dylib build
+    if [[ ! -d /usr/local/bin ]]; then
+        sudo mkdir /usr/local/bin
+    fi #check if /usr/local/bin exists and if not, make the folder
+    sudo ln -sf ~/Applications/insert_dylib-master/insert_dylib /usr/local/bin/insert_dylib
+    if [[ $? == "0" ]]; then
+        echo -e "$info Dylib inserter installed succesfully. (symlinked to /usr/local/bin/insert_dylib)"
+    else
+        echo -e "$error Installation failed with code $?"
+        exit $?
+    fi
+}
+
+uninstallDilly () {
+    echo -e "$info Uninstalling the dylib inserter (this may require your password)..."
+    if [[ -d ~/Applications/insert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there with the old path and if so delete it
+    if [[ -d ~/Applications/insert_dylib-master ]]; then
+        rm -rf ~/Applications/insert_dylib-master
+    fi #check if azule is there and if so delete it
+    if [[ $? == "0" ]]; then
+        echo -e "$info Deleted the Azule folder, will now remove symlink..."
+    else
+        echo -e "$error Failed to remove the Azule folder with error code $?, see ~/Applications/ to remove it yourself then attempt uninstallation again."
+        exit $?
+    fi
+    sudo rm -rf /usr/local/bin/insert_dylib
+    if [[ $? == "0" ]]; then
+        echo -e "$info Dylib inserter uninstalled succesfully."
     else
         echo -e "$error Uninstallation failed with code $?"
         exit $?
@@ -282,6 +385,7 @@ do
   case "${OPTION}" in
     s) silent=${OPTARG};;
     i) ipafile=${OPTARG};;
+    m) machfile=${OPTARG};;
     d) dylib=${OPTARG};;
     o) outpath=${OPTARG};;
    \?) echo -e "$error Invalid option: -${OPTARG}" >&2; exit 1;;
