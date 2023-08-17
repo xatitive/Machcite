@@ -1,5 +1,5 @@
-# Variscite
-Variscite is a tool that lets you easily inject a dylib into an IPA or MacOS Mach-O file.
+# Machcite
+Machcite is a tool that lets you easily inject a dylib into an IPA or MacOS Mach-O file.
 This is usually used to modify apps for enhanced functionality or changing features.
 
 
